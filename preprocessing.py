@@ -1,6 +1,7 @@
 import os
 import numpy as np
 from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
 
 # Directories
 PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
@@ -47,12 +48,19 @@ scaler = StandardScaler().fit(X_train)
 X_train_scaled = scaler.transform(X_train)
 X_test_scaled  = scaler.transform(X_test)
 
+# Apply PCA to reduce dimensionality
+print("Applying PCA for dimensionality reduction...")
+pca = PCA(n_components=0.95, svd_solver='full')  # Retain 95% variance
+X_train_pca = pca.fit_transform(X_train_scaled)
+X_test_pca  = pca.transform(X_test_scaled)
+print(f"Reduced dimensions: {X_train_pca.shape[1]}")
+
 # Save processed arrays
 print(f"Saving processed data to {PROCESSED_DIR}...")
-np.save(X_TRAIN_PROC, X_train_scaled)
+np.save(X_TRAIN_PROC, X_train_pca)
 np.save(Y_TRAIN_PROC, y_train)
 np.save(SUB_TRAIN_PROC, subjects_train)
-np.save(X_TEST_PROC, X_test_scaled)
+np.save(X_TEST_PROC, X_test_pca)
 np.save(Y_TEST_PROC, y_test)
 np.save(SUB_TEST_PROC, subjects_test)
 

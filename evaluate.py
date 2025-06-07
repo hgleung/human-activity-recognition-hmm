@@ -100,7 +100,7 @@ if __name__ == "__main__":
     test_seqs  = group_by_subject(X_te, y_te, s_te)
 
     # Sweep over different numbers of hidden states
-    state_list   = [4, 6, 8, 10]
+    state_list   = [n*2 for n in range(2, 11)]
     acc_results  = {}
     time_results = {}
     best_acc     = -np.inf

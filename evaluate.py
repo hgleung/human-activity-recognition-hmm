@@ -52,6 +52,15 @@ def evaluate_model(n_components, sequences_train, sequences_test):
     true_train   = np.concatenate(all_true)
     state2lab    = map_states_to_labels(hidden_train, true_train, n_components)
 
+    # Evaluate on train set
+    preds_train = []
+    for X, y in sequences_train.values():
+        h = model.predict(X)
+        p = np.array([state2lab[s] for s in h])
+        preds_train.append(p)
+    preds_train = np.concatenate(preds_train)
+    train_acc = accuracy_score(true_train, preds_train)
+
     # Evaluate on test set
     preds, trues = [], []
     for X, y in sequences_test.values():
@@ -64,7 +73,7 @@ def evaluate_model(n_components, sequences_train, sequences_test):
 
     acc = accuracy_score(trues, preds)
     cm  = confusion_matrix(trues, preds, labels=np.unique(trues))
-    return acc, cm, train_time
+    return train_acc, acc, cm, train_time
 
 def plot_accuracy_vs_states(results):
     """Line plot of accuracy vs. number of hidden states."""
@@ -101,24 +110,38 @@ if __name__ == "__main__":
 
     # Sweep over different numbers of hidden states
     state_list   = [n*2 for n in range(2, 11)]
-    acc_results  = {}
+    train_acc_results = {}
+    test_acc_results  = {}
     time_results = {}
     best_acc     = -np.inf
     best_cm      = None
     best_states  = None
 
     for n in state_list:
-        acc, cm, ttime = evaluate_model(n, train_seqs, test_seqs)
-        acc_results[n]  = acc
+        train_acc, test_acc, cm, ttime = evaluate_model(n, train_seqs, test_seqs)
+        train_acc_results[n] = train_acc
+        test_acc_results[n]  = test_acc
         time_results[n] = ttime
-        print(f"{n} states: accuracy={acc:.3f}, time={ttime:.2f}s")
-        if acc > best_acc:
-            best_acc    = acc
+        print(f"{n} states: train_acc={train_acc:.3f}, test_acc={test_acc:.3f}, time={ttime:.2f}s")
+        if test_acc > best_acc:
+            best_acc    = test_acc
             best_cm     = cm
             best_states = n
 
-    # Plot Accuracy vs. Hidden States
-    plot_accuracy_vs_states(acc_results)
+    # Plot Train vs. Test Accuracy vs. Hidden States
+    plt.figure()
+    plt.plot(list(train_acc_results.keys()), list(train_acc_results.values()), marker='o', label='Train Accuracy')
+    plt.plot(list(test_acc_results.keys()), list(test_acc_results.values()), marker='o', label='Test Accuracy')
+    plt.xlabel('Number of Hidden States')
+    plt.ylabel('Accuracy')
+    plt.title('Train vs. Test Accuracy vs. Hidden States')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(os.path.join(FIG_DIR, 'train_vs_test_accuracy_vs_states.png'))
+    plt.close()
+
+    # Plot Accuracy vs. Hidden States (test only for backward compatibility)
+    plot_accuracy_vs_states(test_acc_results)
 
     # Plot Confusion Matrix for best model
     plot_confusion(best_cm, labels=np.unique(y_tr))

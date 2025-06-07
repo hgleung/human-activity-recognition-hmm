@@ -1,21 +1,19 @@
+import os
 import numpy as np
 from hmmlearn import hmm
 
-# Paths to data files
-data_dir      = "data"
-X_path        = f"{data_dir}/train/X_train.txt"
-y_path        = f"{data_dir}/train/y_train.txt"
-subject_path  = f"{data_dir}/train/subject_train.txt"
+# Directory containing processed .npy files
+DATA_DIR = "data/processed"
 
-# Load data
 def load_data():
-    # shape = (n_windows, n_features)
-    X        = np.loadtxt(X_path)
-    # true activity labels
-    y        = np.loadtxt(y_path, dtype=int)
-    # subject IDs
-    subjects = np.loadtxt(subject_path, dtype=int)
-    return X, y, subjects
+    # Load the scaled features, labels, and subject IDs saved by preprocessing.py
+    Xtr  = np.load(os.path.join(DATA_DIR, "X_train.npy"))     # shape = (n_windows, n_features)
+    ytr  = np.load(os.path.join(DATA_DIR, "y_train.npy"))     # true activity labels
+    strn = np.load(os.path.join(DATA_DIR, "subject_train.npy"))# subject IDs
+    Xte  = np.load(os.path.join(DATA_DIR, "X_test.npy"))
+    yte  = np.load(os.path.join(DATA_DIR, "y_test.npy"))
+    ste  = np.load(os.path.join(DATA_DIR, "subject_test.npy"))
+    return Xtr, ytr, strn, Xte, yte, ste
 
 # Group data by subject
 def group_by_subject(X, y, subjects):
@@ -28,8 +26,8 @@ def group_by_subject(X, y, subjects):
 # Main HMM training and demo
 def main():
     print("Loading data...")
-    X, y, subjects = load_data()
-    sequences      = group_by_subject(X, y, subjects)
+    Xtr, ytr, strn, Xte, yte, ste = load_data()
+    sequences = group_by_subject(Xtr, ytr, strn)
     print(f"Number of subjects: {len(sequences)}")
 
     # For demonstration, use data from one subject
@@ -38,12 +36,14 @@ def main():
     print(f"Subject {example_subj} sequence length: {len(y_seq)}")
 
     # Fit a Gaussian HMM (n_components = number of distinct activities)
-    n_components = len(np.unique(y))
+    n_components = len(np.unique(ytr))
     model = hmm.GaussianHMM(
-        n_components     = n_components,
-        covariance_type  = 'diag',
-        n_iter           = 50,
-        verbose          = True
+        n_components    = n_components,
+        covariance_type = 'diag',
+        n_iter          = 100,
+        tol             = 1e-4,
+        min_covar       = 1e-2,
+        verbose         = True
     )
 
     # Concatenate all subjects' data and pass sequence lengths

@@ -6,6 +6,7 @@ from sklearn.metrics import accuracy_score, confusion_matrix
 from hmmlearn import hmm
 from hmm import load_data, group_by_subject
 
+# Ensure figure directory exists
 FIG_DIR = "figures"
 os.makedirs(FIG_DIR, exist_ok=True)
 
@@ -21,17 +22,26 @@ def map_states_to_labels(hidden_states, true_labels, n_states):
             state2label[s] = vals[np.argmax(counts)]
     return state2label
 
- def evaluate_model(n_components, sequences_train, sequences_test):
-    # Fit model and measure training time
+def evaluate_model(n_components, sequences_train, sequences_test):
+    """Fit an HMM and evaluate accuracy and training time."""
+    # Prepare training data
     X_all   = np.vstack([X for X, _ in sequences_train.values()])
     lengths = [X.shape[0] for X, _ in sequences_train.values()]
-    model   = hmm.GaussianHMM(n_components=n_components,
-                              covariance_type='diag', n_iter=50)
+    model   = hmm.GaussianHMM(
+        n_components    = n_components,
+        covariance_type = 'diag',
+        n_iter          = 50,
+        tol             = 1e-4,
+        min_covar       = 1e-2,
+        verbose         = False
+    )
+
+    # Train and time it
     t0 = time.time()
     model.fit(X_all, lengths=lengths)
     train_time = time.time() - t0
 
-    # Map states->labels using training data
+    # Map states → labels on training set
     all_hidden = []
     all_true   = []
     for X, y in sequences_train.values():
@@ -42,7 +52,7 @@ def map_states_to_labels(hidden_states, true_labels, n_states):
     true_train   = np.concatenate(all_true)
     state2lab    = map_states_to_labels(hidden_train, true_train, n_components)
 
-    # Evaluate on test data
+    # Evaluate on test set
     preds, trues = [], []
     for X, y in sequences_test.values():
         h = model.predict(X)
@@ -51,41 +61,17 @@ def map_states_to_labels(hidden_states, true_labels, n_states):
         trues.append(y)
     preds = np.concatenate(preds)
     trues = np.concatenate(trues)
-    acc   = accuracy_score(trues, preds)
-    cm    = confusion_matrix(trues, preds, labels=np.unique(trues))
+
+    acc = accuracy_score(trues, preds)
+    cm  = confusion_matrix(trues, preds, labels=np.unique(trues))
     return acc, cm, train_time
 
-if __name__ == "__main__":
-    # Load & split data
-    X, y, subjects = load_data()
-    seqs = group_by_subject(X, y, subjects)
-    # Split train/test by subject ID (odd vs even)
-    train_ids = [sid for sid in seqs if sid % 2 == 1]
-    test_ids  = [sid for sid in seqs if sid % 2 == 0]
-    train_seqs = {sid: seqs[sid] for sid in train_ids}
-    test_seqs  = {sid: seqs[sid] for sid in test_ids}
-
-    # Accuracy vs. # Hidden States
-    state_list = [4, 6, 8, 10]
-    acc_results = {}
-    time_results = {}
-    cm_best = None
-    best_acc = -np.inf
-    best_states = None
-
-    for n in state_list:
-        acc, cm, ttime = evaluate_model(n, train_seqs, test_seqs)
-        acc_results[n] = acc
-        time_results[n] = ttime
-        print(f"{n} states: accuracy={acc:.3f}, train_time={ttime:.2f}s")
-        if acc > best_acc:
-            best_acc = acc
-            cm_best = cm
-            best_states = n
-
-    # Plot Accuracy vs. #States
+def plot_accuracy_vs_states(results):
+    """Line plot of accuracy vs. number of hidden states."""
+    states = sorted(results.keys())
+    accs   = [results[s] for s in states]
     plt.figure()
-    plt.plot(list(acc_results.keys()), list(acc_results.values()), marker='o')
+    plt.plot(states, accs, marker='o')
     plt.xlabel('Number of Hidden States')
     plt.ylabel('Test Accuracy')
     plt.title('Accuracy vs. Hidden States')
@@ -93,26 +79,65 @@ if __name__ == "__main__":
     plt.savefig(os.path.join(FIG_DIR, 'accuracy_vs_states.png'))
     plt.close()
 
-    # Plot Confusion Matrix for Best Model
+def plot_confusion(cm, labels):
+    """Heatmap of confusion matrix."""
     plt.figure(figsize=(6, 6))
-    labels_unique = np.unique(y)
-    plt.imshow(cm_best, interpolation='nearest', cmap=plt.cm.Blues)
-    plt.xticks(range(len(labels_unique)), labels_unique, rotation=45)
-    plt.yticks(range(len(labels_unique)), labels_unique)
+    plt.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
+    plt.xticks(range(len(labels)), labels, rotation=45)
+    plt.yticks(range(len(labels)), labels)
     plt.colorbar()
     plt.xlabel('Predicted Label')
     plt.ylabel('True Label')
-    plt.title(f'Confusion Matrix ({best_states} States)')
+    plt.title('Confusion Matrix')
     plt.tight_layout()
     plt.savefig(os.path.join(FIG_DIR, 'confusion_matrix.png'))
     plt.close()
 
-    # Posterior Marginals Over Time (first test subject)
-    example_sid = test_ids[0]
-    X_seq, y_seq = test_seqs[example_sid]
-    model = hmm.GaussianHMM(n_components=best_states, covariance_type='diag', n_iter=50)
-    model.fit(np.vstack([X for X, _ in train_seqs.values()]),
-              lengths=[X.shape[0] for X, _ in train_seqs.values()])
+if __name__ == "__main__":
+    # Load preprocessed data and group by subject
+    X_tr, y_tr, s_tr, X_te, y_te, s_te = load_data()
+    train_seqs = group_by_subject(X_tr, y_tr, s_tr)
+    test_seqs  = group_by_subject(X_te, y_te, s_te)
+
+    # Sweep over different numbers of hidden states
+    state_list   = [4, 6, 8, 10]
+    acc_results  = {}
+    time_results = {}
+    best_acc     = -np.inf
+    best_cm      = None
+    best_states  = None
+
+    for n in state_list:
+        acc, cm, ttime = evaluate_model(n, train_seqs, test_seqs)
+        acc_results[n]  = acc
+        time_results[n] = ttime
+        print(f"{n} states: accuracy={acc:.3f}, time={ttime:.2f}s")
+        if acc > best_acc:
+            best_acc    = acc
+            best_cm     = cm
+            best_states = n
+
+    # Plot Accuracy vs. Hidden States
+    plot_accuracy_vs_states(acc_results)
+
+    # Plot Confusion Matrix for best model
+    plot_confusion(best_cm, labels=np.unique(y_tr))
+
+    # Posterior marginals over time for one test subject
+    example_sid = list(test_seqs.keys())[0]
+    X_seq, _   = test_seqs[example_sid]
+    model      = hmm.GaussianHMM(
+        n_components    = best_states,
+        covariance_type = 'diag',
+        n_iter          = 50,
+        tol             = 1e-4,
+        min_covar       = 1e-2
+    )
+    # Re-train on full training set
+    X_all    = np.vstack([X for X, _ in train_seqs.values()])
+    lengths  = [X.shape[0] for X, _ in train_seqs.values()]
+    model.fit(X_all, lengths=lengths)
+
     post = model.predict_proba(X_seq)
     plt.figure(figsize=(10, 4))
     for s in range(best_states):
@@ -125,19 +150,20 @@ if __name__ == "__main__":
     plt.savefig(os.path.join(FIG_DIR, 'posterior_marginals.png'))
     plt.close()
 
-    # Accuracy vs. Training-Set Size
+    # Accuracy vs. training-set size
     frac_list = [0.5, 0.75, 1.0]
-    acc_size = {}
+    acc_size  = {}
+    train_ids = list(train_seqs.keys())
     for frac in frac_list:
-        n_train = int(len(train_ids) * frac)
-        sample_ids = train_ids[:n_train]
-        sub_train = {sid: train_seqs[sid] for sid in sample_ids}
-        acc, _, _ = evaluate_model(best_states, sub_train, test_seqs)
-        acc_size[frac] = acc
-        print(f"Train frac {frac:.2f}: acc={acc:.3f}")
+        n_train    = int(len(train_ids) * frac)
+        subset_ids = train_ids[:n_train]
+        sub_train  = {sid: train_seqs[sid] for sid in subset_ids}
+        acc_sub, _, _ = evaluate_model(best_states, sub_train, test_seqs)
+        acc_size[frac] = acc_sub
+        print(f"Train frac {frac:.2f}: acc={acc_sub:.3f}")
 
     plt.figure()
-    plt.plot(frac_list, list(acc_size.values()), marker='o')
+    plt.plot(list(acc_size.keys()), list(acc_size.values()), marker='o')
     plt.xlabel('Training Set Fraction')
     plt.ylabel('Test Accuracy')
     plt.title('Accuracy vs. Training-Set Size')
@@ -145,7 +171,7 @@ if __name__ == "__main__":
     plt.savefig(os.path.join(FIG_DIR, 'accuracy_vs_train_size.png'))
     plt.close()
 
-    # Runtime vs. # Hidden States
+    # Runtime vs. hidden states
     plt.figure()
     plt.bar(list(time_results.keys()), list(time_results.values()))
     plt.xlabel('Number of Hidden States')
